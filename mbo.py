@@ -13,6 +13,9 @@ import numpy as np
 import pandas as pd
 from time import time
 from scipy import sparse
+
+import matplotlib
+matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 
 from joblib import Parallel, delayed
