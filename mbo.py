@@ -13,8 +13,6 @@ import numpy as np
 import pandas as pd
 from time import time
 from scipy import sparse
-
-from rsub import *
 from matplotlib import pyplot as plt
 
 from joblib import Parallel, delayed
@@ -23,7 +21,8 @@ from joblib import Parallel, delayed
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--inpath', type=str, default='wiki.txt')
+    parser.add_argument('--inpath', type=str, default='_data/wiki/wiki.txt')
+    parser.add_argument('--outpath', type=str, default='_results/wiki/wiki')
     
     parser.add_argument('--tau', type=float, default=20)           # Time horizon for diffusion
     parser.add_argument('--inner-iters', type=int, default=100)    # Number of steps in inner loop
@@ -40,6 +39,7 @@ def parse_args():
 
 
 def mbo(u, adj, L, tau=20, inner_iters=100, outer_iters=25, conv_iters=2, conv_thresh=0.01):
+    best_value = -1
     
     conv_lookback = inner_iters * conv_iters
     
@@ -62,6 +62,9 @@ def mbo(u, adj, L, tau=20, inner_iters=100, outer_iters=25, conv_iters=2, conv_t
                 "inner_iter" : inner_iter,
                 "value"      : value,
             })
+            
+            if value > best_value:
+                best_u = u.copy()
         
         # Threshold step
         u = (2.0 * (u > 0) - 1)
@@ -71,7 +74,7 @@ def mbo(u, adj, L, tau=20, inner_iters=100, outer_iters=25, conv_iters=2, conv_t
             if value < prev_value * (1 + conv_thresh):
                 break
         
-    return cuts
+    return cuts, best_value, best_u
 
 # --
 # Run
@@ -124,6 +127,11 @@ if __name__ == "__main__":
     jobs = [delayed(runner)(seed=seed, **mbo_args) for seed in range(args.n_runs)]
     results = Parallel(n_jobs=args.n_jobs)(jobs)
     
+    results, best_values, best_us = zip(*results)
+    
+    best_u = best_us[np.argmax(best_values)]
+    np.save(args.outpath + '-u', best_u)
+    
     # --
     # Log
     
@@ -135,6 +143,7 @@ if __name__ == "__main__":
         "elapsed_time" : time() - t,
     }), file=sys.stderr)
     
+    outfile = open(args.outpath + '-log.jl', 'w')
     for run_id, result in enumerate(results):
         for r in result:
             print(json.dumps({
@@ -142,7 +151,9 @@ if __name__ == "__main__":
                 "outer_iter" : r['outer_iter'],
                 "inner_iter" : r['inner_iter'],
                 "value"      : r['value'],
-            }))
+            }), file=outfile)
+    
+    outfile.close()
     
     # --
     # Plot
@@ -156,4 +167,4 @@ if __name__ == "__main__":
         _ = plt.title('MBO+ (tau=%f | inner_iters=%d | outer_iters=%d)' % (args.tau, args.inner_iters, args.outer_iters))
         _ = plt.xlabel('outer_iter')
         _ = plt.ylabel('value')
-        show_plot()
+        plt.savefig(args.outpath + '-plot.png')

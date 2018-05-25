@@ -13,7 +13,6 @@ for i in $(seq 1 8); do
     prep _data/AS/AS$i.graph
 done
 
-python mbo.py --inpath _data/AS/AS1.graph --plot > _results/AS/AS1.graph
-python mbo.py --inpath _data/AS/AS2.graph --plot > _results/AS/AS2.graph
-python mbo.py --inpath _data/AS/AS3.graph --plot > _results/AS/AS3.graph
-# ...
+python mbo.py --inpath _data/AS/AS1.graph --outpath _results/AS/AS1 --plot
+python mbo.py --inpath _data/AS/AS2.graph --outpath _results/AS/AS2 --plot
+python mbo.py --inpath _data/AS/AS3.graph --outpath _results/AS/AS3 --plot
