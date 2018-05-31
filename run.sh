@@ -33,3 +33,5 @@ gunzip wiki.txt.gz
 mv wiki.txt _data/wiki
 
 time python mbo.py --inpath _data/wiki/wiki.txt --outpath _results/wiki/ --n-runs 1
+
+

@@ -27,11 +27,11 @@ def parse_args():
     parser.add_argument('--inpath', type=str, default='_data/wiki/wiki.txt')
     parser.add_argument('--outpath', type=str, default='_results/wiki/wiki')
     
-    parser.add_argument('--tau', type=float, default=20)           # Time horizon for diffusion
-    parser.add_argument('--inner-iters', type=int, default=100)    # Number of steps in inner loop
-    parser.add_argument('--outer-iters', type=int, default=25)     # Number of steps in outer loop
-    parser.add_argument('--conv-iters', type=int, default=2)       # Number of outer loops to look back for convergence
-    parser.add_argument('--conv-thresh', type=float, default=0.01) # break if not improved by `conv_thresh` after `conv_iters` outer
+    parser.add_argument('--tau', type=float, default=20)            # Time horizon for diffusion
+    parser.add_argument('--inner-iters', type=int, default=100)     # Number of steps in inner loop
+    parser.add_argument('--outer-iters', type=int, default=25)      # Number of steps in outer loop
+    parser.add_argument('--conv-iters', type=int, default=5)        # Number of outer loops to look back for convergence
+    parser.add_argument('--conv-thresh', type=float, default=0.001) # break if not improved by `conv_thresh` after `conv_iters` outer
     
     parser.add_argument('--n-jobs', type=int, default=32) # Number of processors
     parser.add_argument('--n-runs', type=int, default=32) # Number of times to run MBO
@@ -44,36 +44,34 @@ def parse_args():
 def mbo(u, adj, L, tau=20, inner_iters=100, outer_iters=25, conv_iters=2, conv_thresh=0.01):
     best_value = -1
     
-    conv_lookback = inner_iters * conv_iters
-    
     cuts = [{
         "outer_iter" : 0,
-        "inner_iter" : -1,
-        "value"      : adj[u == 1][:,u != 1].sum(),
+        "value"      : adj[u > 0].dot(u <= 0).sum()
     }]
     
+    t = time()
     for outer_iter in range(outer_iters):
-        
         # Signless diffusion
         for inner_iter in range(inner_iters):
             u -= (tau / inner_iters) * L.dot(u)
-            
-            # Value of cut
-            value = adj[u > 0][:,u <= 0].sum()
-            cuts.append({
-                "outer_iter" : outer_iter,
-                "inner_iter" : inner_iter,
-                "value"      : value,
-            })
-            
-            if value > best_value:
-                best_u = u.copy()
+        
+        # Value of cut
+        value = adj[u > 0].dot(u <= 0).sum()
+        cuts.append({
+            "outer_iter"   : outer_iter,
+            "value"        : value,
+            "elapsed_time" : time() - t,
+        })
+        print(cuts[-1])
+        
+        if value > best_value:
+            best_u = u.copy()
         
         # Threshold step
         u = (2.0 * (u > 0) - 1)
         
-        if len(cuts) > conv_lookback:
-            prev_value = cuts[-conv_lookback]['value']
+        if len(cuts) > conv_iters:
+            prev_value = cuts[-conv_iters]['value']
             if value < prev_value * (1 + conv_thresh):
                 break
         
@@ -97,7 +95,7 @@ if __name__ == "__main__":
     
     num_nodes = len(set(np.hstack(edges)))
     num_edges = edges.shape[0]
-    print('num_nodes=%d | num_edges=%d' % (num_nodes, num_edges), file=sys.stderr)
+    print('mbo.py: num_nodes=%d | num_edges=%d' % (num_nodes, num_edges), file=sys.stderr)
     
     adj_dim = edges.max() + 1
     adj = sparse.csr_matrix((np.ones(edges.shape[0]), (edges[:,0], edges[:,1])), shape=(adj_dim, adj_dim))
@@ -114,6 +112,7 @@ if __name__ == "__main__":
     
     # --
     # Run
+    print('mbo.py: running', file=sys.stderr)
     
     def runner(seed, **kwargs):
         np.random.seed(seed)
@@ -155,7 +154,6 @@ if __name__ == "__main__":
             print(json.dumps({
                 "run_id"     : run_id,
                 "outer_iter" : r['outer_iter'],
-                "inner_iter" : r['inner_iter'],
                 "value"      : r['value'],
             }), file=outfile)
     
@@ -166,7 +164,7 @@ if __name__ == "__main__":
     
     if args.plot:
         for run_id, result in enumerate(results):
-            progress = [r['outer_iter'] + r['inner_iter'] / args.inner_iters for r in result]
+            progress = [r['outer_iter'] for r in result]
             values   = [r['value'] for r in result]
             _ = plt.plot(progress, values)
         
