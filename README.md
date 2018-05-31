@@ -16,6 +16,6 @@ See `./run.sh` for usage.
 
 #### Todo
 
-- Parallel sparse-dense matrix-vector multiplication
+- Parallelize sparse-dense matrix-vector multiplication
 - CUDA implementation (via `cupy`)
-- Implement other graph Laplacians (right now, only have random walk (`delta_1`) which is most performant)
+- Implement other graph Laplacians (right now, only have random walk `delta_1` which has best performance)
