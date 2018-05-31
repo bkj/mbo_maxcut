@@ -95,9 +95,12 @@ if __name__ == "__main__":
     # --
     # Prep
     
-    num_nodes = edges.max() + 1
+    num_nodes = len(set(np.hstack(edges)))
+    num_edges = edges.shape[0]
+    print('num_nodes=%d | num_edges=%d' % (num_nodes, num_edges), file=sys.stderr)
     
-    adj = sparse.csr_matrix((np.ones(edges.shape[0]), (edges[:,0], edges[:,1])), shape=(num_nodes, num_nodes))
+    adj_dim = edges.max() + 1
+    adj = sparse.csr_matrix((np.ones(edges.shape[0]), (edges[:,0], edges[:,1])), shape=(adj_dim, adj_dim))
     adj = ((adj + adj.T) > 0).astype(np.float)
     
     # Drop nodes w/ degree 0
