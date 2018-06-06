@@ -105,7 +105,7 @@ if __name__ == "__main__":
     sel = adj.getnnz(axis=0) > 0
     adj = adj[sel][:,sel]
     
-    # Make signless random walk Laplacia
+    # Make signless random walk Laplacian
     d = np.asarray(adj.sum(axis=-1)).squeeze()
     L = adj + sparse.diags(d)
     L = sparse.diags(1 / d).dot(L)
