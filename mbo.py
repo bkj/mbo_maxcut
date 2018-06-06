@@ -44,6 +44,42 @@ def parse_args():
     parser.add_argument('--plot', action='store_true')
     return parser.parse_args()
 
+# import localsolver
+# def run_local(edges, hotstart):
+#     with localsolver.LocalSolver() as ls:
+#         sel = edges[:,0] > edges[:,1]
+#         edges[sel] = edges[sel][:,[1, 0]]
+        
+#         origin, dest = zip(*set(map(tuple, edges)))
+        
+#         unodes  = np.unique(np.hstack([np.unique(origin), np.unique(dest)]))
+        
+#         lookup = dict(zip(unodes, range(len(unodes))))
+#         origin = [lookup[x] for x in origin]
+#         dest   = [lookup[x] for x in dest]
+        
+#         num_nodes = len(unodes)
+#         num_edges = edges.shape[0]
+        
+#         print('defining problem', file=sys.stderr)
+#         x          = [ls.model.bool() for i in range(num_nodes)]
+#         incut      = [ls.model.neq(x[o], x[d]) for o, d in zip(origin, dest)]
+#         cut_weight = ls.model.sum(incut)
+        
+#         ls.model.maximize(cut_weight)
+#         ls.model.close()
+        
+#         hotstart = (hotstart == 1).astype(int)
+#         _ = [xx.set_value(h) for xx, h in zip(x, hotstart)]
+        
+#         ls.param.nb_threads = 32
+#         ls.create_phase().time_limit = 1
+        
+#         print('running', file=sys.stderr)
+#         ls.solve()
+        
+#         solution = np.array([xx.value for xx in x]).astype(np.float64)
+#         return solution
 
 def mbo(u, adj, L, lr, inner_iters, outer_iters, conv_iters, conv_thresh, decay, verbose=False):
     
@@ -89,7 +125,7 @@ def mbo(u, adj, L, lr, inner_iters, outer_iters, conv_iters, conv_thresh, decay,
             prev_value = cuts[-conv_iters]['value']
             if value < prev_value * (1 + conv_thresh):
                 break
-        
+    
     return cuts, best_value, best_u
 
 
@@ -105,10 +141,10 @@ if __name__ == "__main__":
     
     print('mbo.py: loading %s' % args.inpath, file=sys.stderr)
     # >>
-    # edges = pd.read_csv(args.inpath, sep='\t', header=None).values
-    edges = pd.read_csv(args.inpath, sep=' ', header=None, skiprows=1)
-    del edges[2]
-    edges = edges.values
+    edges = pd.read_csv(args.inpath, sep='\t', header=None).values
+    # edges = pd.read_csv(args.inpath, sep=' ', header=None, skiprows=1)
+    # del edges[2]
+    # edges = edges.values
     # <<
     
     # --
@@ -158,6 +194,12 @@ if __name__ == "__main__":
         "decay"       : not args.no_decay,
     }
     
+    # jobs = []
+    # for seed in range(args.n_runs):
+    #     np.random.seed(seed)
+    #     u = inits[args.init]()
+    #     u = run_local(edges, u)
+    #     jobs.append(delayed(runner)(u, **mbo_args))
     
     jobs = [delayed(runner)(seed=args.seed + seed, **mbo_args) for seed in range(args.n_runs)]
     results = Parallel(n_jobs=args.n_jobs)(jobs)
