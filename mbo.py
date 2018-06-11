@@ -24,14 +24,17 @@ from joblib import Parallel, delayed
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--inpath', type=str, default='_data/wiki/wiki.txt')
-    parser.add_argument('--outpath', type=str, default='_results/wiki/wiki')
+    parser.add_argument('--inpath', type=str, default='_data/set1/g54.rud')
+    parser.add_argument('--outpath', type=str, default='delete-me')
     
-    parser.add_argument('--tau', type=float, default=20)            # Time horizon for diffusion
+    parser.add_argument('--lr', type=float, default=0.2)            # Time horizon for diffusion
+    parser.add_argument('--no-decay', action="store_true")          # Linear decay on learning rate
+    parser.add_argument('--init', type=str, default='normal')       # How to initialize solution
+    
     parser.add_argument('--inner-iters', type=int, default=100)     # Number of steps in inner loop
     parser.add_argument('--outer-iters', type=int, default=25)      # Number of steps in outer loop
     parser.add_argument('--conv-iters', type=int, default=5)        # Number of outer loops to look back for convergence
-    parser.add_argument('--conv-thresh', type=float, default=0.001) # break if not improved by `conv_thresh` after `conv_iters` outer
+    parser.add_argument('--conv-thresh', type=float, default=0.0)   # break if not improved by `conv_thresh` after `conv_iters` outer
     
     parser.add_argument('--n-jobs', type=int, default=32) # Number of processors
     parser.add_argument('--n-runs', type=int, default=32) # Number of times to run MBO
@@ -41,7 +44,15 @@ def parse_args():
     return parser.parse_args()
 
 
-def mbo(u, adj, L, tau=20, inner_iters=100, outer_iters=25, conv_iters=2, conv_thresh=0.01):
+def mbo(u, adj, L, lr, inner_iters, outer_iters, conv_iters, conv_thresh, decay, verbose=False):
+    
+    if decay:
+        def scheduler(progress):
+            return lr * float(outer_iters - progress) / outer_iters
+    else:
+        def scheduler(progress):
+            return lr
+    
     best_value = -1
     
     cuts = [{
@@ -51,10 +62,12 @@ def mbo(u, adj, L, tau=20, inner_iters=100, outer_iters=25, conv_iters=2, conv_t
     
     t = time()
     for outer_iter in range(outer_iters):
+        
         # Signless diffusion
         for inner_iter in range(inner_iters):
-            u -= (tau / inner_iters) * L.dot(u)
-        
+            progress = outer_iter + (inner_iter / inner_iters)
+            u -= scheduler(progress) * L.dot(u)
+            
         # Value of cut
         value = adj[u > 0].dot(u <= 0).sum()
         cuts.append({
@@ -62,7 +75,8 @@ def mbo(u, adj, L, tau=20, inner_iters=100, outer_iters=25, conv_iters=2, conv_t
             "value"        : value,
             "elapsed_time" : time() - t,
         })
-        print(cuts[-1])
+        if verbose:
+            print(json.dumps(cuts[-1]))
         
         if value > best_value:
             best_u = u.copy()
@@ -74,8 +88,9 @@ def mbo(u, adj, L, tau=20, inner_iters=100, outer_iters=25, conv_iters=2, conv_t
             prev_value = cuts[-conv_iters]['value']
             if value < prev_value * (1 + conv_thresh):
                 break
-        
+    
     return cuts, best_value, best_u
+
 
 # --
 # Run
@@ -109,27 +124,37 @@ if __name__ == "__main__":
     d = np.asarray(adj.sum(axis=-1)).squeeze()
     L = adj + sparse.diags(d)
     L = sparse.diags(1 / d).dot(L)
+    # Alternative laplacian
+    # L = sparse.diags(d ** -0.5).dot(L).dot(sparse.diags(d ** -0.5))
     
     # --
     # Run
     print('mbo.py: running', file=sys.stderr)
     
+    inits = {
+        "discrete" : lambda: np.random.choice((-1.0, 1.0), adj.shape[0]),
+        "uniform"  : lambda: np.random.uniform(-1, 1, adj.shape[0]),
+        "normal"   : lambda: np.random.normal(0, 1, adj.shape[0]),
+    }
+    
     def runner(seed, **kwargs):
         np.random.seed(seed)
-        u = np.random.choice((-1.0, 1.0), adj.shape[0])
+        u = inits[args.init]()
         return mbo(u=u, **kwargs)
     
     t = time()
     mbo_args = {
         "adj"         : adj,
         "L"           : L,
-        "tau"         : args.tau,
+        "lr"          : args.lr,
         "inner_iters" : args.inner_iters,
         "outer_iters" : args.outer_iters,
         "conv_iters"  : args.conv_iters,
         "conv_thresh" : args.conv_thresh,
+        "decay"       : not args.no_decay,
     }
-    jobs = [delayed(runner)(seed=seed, **mbo_args) for seed in range(args.n_runs)]
+    
+    jobs = [delayed(runner)(seed=args.seed + seed, **mbo_args) for seed in range(args.n_runs)]
     results = Parallel(n_jobs=args.n_jobs)(jobs)
     
     results, best_values, best_us = zip(*results)
@@ -168,7 +193,7 @@ if __name__ == "__main__":
             values   = [r['value'] for r in result]
             _ = plt.plot(progress, values)
         
-        _ = plt.title('MBO+ (tau=%f | inner_iters=%d | outer_iters=%d)' % (args.tau, args.inner_iters, args.outer_iters))
+        _ = plt.title('MBO+ (lr=%f | inner_iters=%d | outer_iters=%d)' % (args.lr, args.inner_iters, args.outer_iters))
         _ = plt.xlabel('outer_iter')
         _ = plt.ylabel('value')
         plt.savefig(args.outpath + '-plot.png')
